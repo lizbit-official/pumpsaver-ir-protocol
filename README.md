@@ -3,13 +3,18 @@
 Protocol specification and reference decoder for the IR data broadcast of **SymCom / Littelfuse
 PumpSaver Plus** pump-protection relays (reverse engineered on a 233-P).
 
-These devices continuously broadcast live telemetry (voltage, current, power, power factor),
-lifetime counters (pump starts, run-time), configuration, and a 20-fault history over a baseband
-IR link meant for SymCom's discontinued "Informer" handheld. This repo documents that protocol —
-apparently for the first time anywhere — and provides a tested reference decoder.
+These relays constantly broadcast their internal state over a baseband IR link meant for
+SymCom's discontinued "Informer" handheld:
+
+- live **voltage, current, power, power factor**
+- lifetime **pump-start** and **run-time** counters
+- trip-point configuration and the last-20-faults history
+
+This repo documents that protocol — apparently for the first time anywhere — and provides a
+tested reference decoder.
 
 **Want this in Home Assistant?** See the companion repo [esphome-pumpsaver](https://github.com/lizbit-official/esphome-pumpsaver) for a ready-made
-ESPHome component (an ESP32 + a ~$1 IR phototransistor pointed at the device).
+ESPHome component (an ESP32 + a $0.30 IR phototransistor pointed at the device).
 
 ## The protocol in one paragraph
 
