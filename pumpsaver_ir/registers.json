@@ -25,16 +25,16 @@
     { "reg": "0x05", "name": "low_voltage_trip_or_min", "unit": "V", "scale": 10, "confidence": "candidate", "notes": "211.2 V. Low-voltage trip OR min-volts-since-cal; 24 days of data never discriminated." },
     { "reg": "0x07", "name": "const_0x07", "unit": "", "scale": 1, "confidence": "unknown", "notes": "45060 = 0xB004 = 751 h x 60 exactly, or an ID/bit-field. Unresolved." },
     { "reg": "0x08", "name": "const_0x08", "unit": "", "scale": 1, "confidence": "candidate", "notes": "= 0x03 (1223); duplication unexplained." },
-    { "reg": "0x09", "name": "oc_trip_delay", "unit": "s", "scale": 10, "confidence": "candidate", "notes": "50 = 5.0 s — matches the manual's fixed 5 s overcurrent trip delay." },
+    { "reg": "0x09", "name": "oc_trip_delay", "unit": "s", "scale": 10, "confidence": "candidate", "notes": "50 = 5.0 s fixed overcurrent trip delay — but 50 is also a legal restart-delay setting (knob 2-225 min) and a legal CT ratio (50:5). A knob photo discriminates." },
     { "reg": "0x0A", "name": "high_voltage_trip_or_max", "unit": "V", "scale": 10, "confidence": "candidate", "notes": "248.8 V. High-voltage trip OR max-volts-since-cal (live V once grazed exactly 2488 for one sample)." },
-    { "reg": "0x0B", "name": "firmware_version", "unit": "", "scale": 1, "confidence": "candidate", "notes": "1027 = 0x0403 — version 4.03? Refuted as an amps record." },
-    { "reg": "0x0C", "name": "const_0x0C", "unit": "", "scale": 1, "confidence": "unknown", "notes": "10277 = 0x2825. Model-ID candidate." },
+    { "reg": "0x0B", "name": "firmware_version", "unit": "", "scale": 1, "confidence": "candidate-strong", "notes": "1027 = 0x0403 = firmware v4.03 — matches the SymCom family packed-version convention exactly (high byte major, low minor)." },
+    { "reg": "0x0C", "name": "const_0x0C", "unit": "", "scale": 1, "confidence": "unknown", "notes": "10277 = 0x2825. Model-ID reading weakened (family convention stores literal decimal model codes; nothing holds 233). Possibly a serial/date pair with 0x07." },
     { "reg": "0x0E", "name": "min_or_nominal_voltage", "unit": "V", "scale": 10, "confidence": "candidate", "notes": "231.5 V. Min-volts-since-cal or nominal voltage; refuted as max-V record." },
     { "reg": "0x14", "name": "drywell_trip_delay", "unit": "s", "scale": 10, "confidence": "candidate", "notes": "41 = 4.1 s ≈ the manual's fixed 4 s dry-well trip delay." }
   ],
   "blocks": [
     { "range": "0x04,0x06,0x0D,0x15,0x16,0x18", "confidence": "unknown", "notes": "Observed constant 0. Restart-delay setting/remaining and CT size are expected here (all 0 / n-a except during a lockout or on CT-equipped models)." },
-    { "range": "0x19-0x1D", "confidence": "verified-structure", "notes": "20 x 4-bit fault codes, packed MSB-first, NEWEST FIRST. Observed [4, 1 x19]. Code 1 = dry-well (proven via 4-s retry spacing); code 4 unidentified." },
+    { "range": "0x19-0x1D", "confidence": "verified-structure", "notes": "20 x 4-bit fault codes, packed MSB-first, NEWEST FIRST. Observed [4, 1 x19]. Code 1 = dry-well (proven via 4-s retry spacing). Enum hypothesis from family documents: 0=none, 1=dry-well, 2=overcurrent, 3=voltage, 4=rapid-cycle (code 4 unconfirmed; no public table exists)." },
     { "range": "0x1E-0x56", "confidence": "verified-structure", "notes": "19 x (W, V x10, A x100) fault snapshots on a rigid 3-register grid: record k starts at 0x1E+3k, newest first. Amps are single-count. Observed: W 755-838, V 2394-2432, A 541-660 (implied PF 0.52-0.57 = underload signature)." },
     { "range": "0x57-0x74", "confidence": "verified-structure", "notes": "20 x 3-byte fault timestamps: 24-bit BE, run-clock MINUTES (same unit as 0x17), newest first. Observed [32572, 6703 x14, 6702 x5] — a 19-trip dry-well retry storm plus one code-4 event." },
     { "range": "0x75", "confidence": "unknown", "notes": "Trailer word 0x7E3C (= code-4 timestamp - 256 min exactly). Never updated at a normal pump start. Unresolved." }

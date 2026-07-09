@@ -5,8 +5,9 @@
 SymCom models — 231-P Insider, 233-1.5-P, 234-P, 235P, 236-P, 111P — very likely share the framing,
 possibly with different register maps). The same hardware ships **rebranded**: Pentek / Pentair
 "Submersible Pump Protector" SPP-233P, SPP-235P, SPP-111-3RLP and SD-F30x (their reader is the
-*Pentek SPP-Informer*), and Goulds / CentriPro (Xylem) "PumpSaver by SymCom" part numbers such as
-233153RL and 231Insider.
+*Pentek SPP-Informer*; Berkeley, Myers and Sta-Rite sell the same SPP SKUs), and Goulds /
+CentriPro (Xylem) "PumpSaver by SymCom" part numbers (233, 2333RL, 2353RL50/75/100, 231Insider…).
+Beware suffix conventions: Pentek `-100` = 10 HP, CentriPro `RL100` = 100:5 CT.
 **Status:** wire format **verified** (three independently-derived decoders; ~8.4 M words across
 ~57 h of captures decode with only two glitched bursts rejected, counter arithmetic proven
 against external ground truth);
@@ -148,10 +149,10 @@ on/off events) or arithmetic structure; **candidate** = consistent hypothesis, u
 | 0x05 | 2112 | candidate | Low-voltage trip **or** min-volts-since-cal, 211.2 V — 24 days of captures never discriminated (live V stayed within 233.1–248.8 V) |
 | 0x07 | 45060 | unknown | = 0xB004; = 751 h × 60 exactly, or an ID/bit-field — unresolved |
 | 0x08 | 1223 | candidate | = 0x03; duplication unexplained |
-| 0x09 | 50 | candidate | 5.0 s — matches the manual's fixed 5 s overcurrent trip delay (×10) |
+| 0x09 | 50 | candidate | 5.0 s overcurrent trip delay (×10) — but 50 is also a legal restart-delay setting (knob range 2–225 min) and a legal CT ratio (50:5); a knob photo discriminates |
 | 0x0A | 2488 | candidate | High-voltage trip **or** max-volts-since-cal, 248.8 V (live V once grazed exactly 2488 for a single sample and retreated — suggestive, not probative) |
-| 0x0B | 1027 | candidate | = 0x0403 — firmware version 4.03? Refuted as an amps record |
-| 0x0C | 10277 | unknown | = 0x2825; model-ID candidate |
+| 0x0B | 1027 | **candidate (strong)** | **Firmware version 4.03** — matches the SymCom family's documented packed-version convention exactly (high byte = major, low = minor; their Solutions software renders reg 1 of a 777 the same way) |
+| 0x0C | 10277 | unknown | = 0x2825. Model-ID reading weakened: the family convention is a *literal decimal* model code (777-P2 stores 778, 77C stores 77) and no register holds 233. The family also used month+serial / year registers — 0x0C/0x07 may be a serial/date pair |
 | 0x0E | 2315 | candidate | Min-volts-since-cal or nominal voltage, 231.5 V (refuted as a max-V record) |
 | 0x14 | 41 | candidate | 4.1 s ≈ the manual's fixed 4 s dry-well trip delay (×10) |
 | 0x04, 0x06, 0x0D, 0x15, 0x16, 0x18 | 0 | unknown | Restart-delay setting/remaining and CT size are expected to live among these (all are 0 / n-a except during a lockout or on CT-equipped models) |
@@ -172,11 +173,18 @@ full-resolution analysis of the corpus plus exclusion arithmetic:
   6702–6703 — an auto-retry storm whose per-retry run time brackets to [3.2, 4.6] s, matching the
   manual's fixed 4 s dry-well delay and excluding the 5 s overcurrent delay; dry-well is also the
   fault class with automatic restart-delay retry.
-- **Code 4 is unidentified** (its snapshot voltage is normal, so not obviously OV/UV); it occurred
-  at run-clock 32,572 min = 22d 14h 52m.
+- **Code 4 = rapid-cycle (hypothesis):** no public code table exists for this family (verified
+  negative — the name mapping lives only in Informer firmware, and the documented enums of the
+  777/601 siblings do not transfer). But the hardware distinguishes exactly four trip classes,
+  and two independent SymCom document orderings list them *dry-well, overcurrent, voltage,
+  rapid-cycle* — suggesting `0=none, 1=dry-well, 2=overcurrent, 3=voltage, 4=rapid-cycle`.
+  The code-4 event (run-clock 32,572 min = 22d 14h 52m, normal snapshot voltage) fits a
+  rapid-cycle lockout's frequency profile.
 - The timestamp encoding was proven by exclusion: packed d/h/m and BCD contain invalid digits,
   hour-units and little-endian readings are physically impossible, and the storm's LSB step
-  (`0x1A2F`→`0x1A2E`) is exactly adjacent minutes.
+  (`0x1A2F`→`0x1A2E`) is exactly adjacent minutes. 24-bit minute counters are a SymCom house
+  convention (documented for the 777-P2's start counters; the Informer-MS display caps at
+  ≈2²⁴ minutes), and the 20-fault ring depth recurs on the MotorSaver 455.
 - The ring is **write-once**: byte-identical across 24 days of captures and 11 pump starts. Only
   six registers ever change without a fault: 0x0F, 0x10, 0x11, 0x12, 0x13, 0x17. (An earlier
   draft's "0x3F transient" was a sampling artifact — 0x3F is fault record #11's wattage.)
@@ -234,8 +242,9 @@ stdlib only). An ESP32/ESPHome implementation lives in the companion repo [espho
 
 ## 7. Open questions
 
-1. **Code-4 fault identity** — needs the family's fault-code enumeration (a documented code
-   table from any SymCom comm product would settle it) or a captured fault of known type.
+1. **Code-4 fault identity** — best hypothesis rapid-cycle (see §5); no public enumeration
+   exists, so confirmation needs a captured fault of known type or an Informer readout of this
+   unit's fault #1 name.
 2. **Trip settings vs min/max records** for the voltage pair 0x0A/0x05: 24 days of captures never
    discriminated. A recalibration (the manual says it resets min/max) or an Informer readout
    settles it in one shot.
