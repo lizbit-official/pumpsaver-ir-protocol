@@ -4,3 +4,7 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
+
+# plugin/tool logs and stray downloads must never be committed
+logs/
+*.pdf

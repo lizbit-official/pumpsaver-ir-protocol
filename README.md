@@ -1,7 +1,9 @@
 # pumpsaver-ir-protocol
 
 Protocol specification and reference decoder for the IR data broadcast of **SymCom / Littelfuse
-PumpSaver Plus** pump-protection relays (reverse engineered on a 233-P).
+PumpSaver Plus** pump-protection relays (reverse engineered on a 233-P). The same devices ship
+rebranded as **Pentek / Pentair SPP-series** (SPP-233P, SPP-235P, SD-F30x…) and
+**Goulds / CentriPro "PumpSaver by SymCom"** units.
 
 These relays constantly broadcast their internal state over a baseband IR link meant for
 SymCom's discontinued "Informer" handheld:
@@ -82,7 +84,8 @@ counters verified; configuration and fault-history blocks are mapped but not yet
 The most useful contributions:
 
 - A capture annotated with an actual **Informer** readout (instant semantic map)
-- Captures from **other models** (231-P, 234-P, 235P, 236-P…) to test framing generality
+- Captures from **other models** (231-P, 234-P, 235P, 236-P… — including Pentek SPP-series and
+  Goulds/CentriPro rebrands) to test framing generality
 - A capture spanning a **fault event** (decodes the fault-ring layout)
 - A clamp-meter reading during a pump run (settles PROTOCOL.md §7 Q1)
 

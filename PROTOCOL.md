@@ -3,7 +3,10 @@
 **Spec version:** 0.1 (2026-07-09)
 **Applies to:** PumpSaver Plus 233-P (reverse engineered on this model; other Informer-compatible
 SymCom models — 231-P Insider, 233-1.5-P, 234-P, 235P, 236-P, 111P — very likely share the framing,
-possibly with different register maps).
+possibly with different register maps). The same hardware ships **rebranded**: Pentek / Pentair
+"Submersible Pump Protector" SPP-233P, SPP-235P, SPP-111-3RLP and SD-F30x (their reader is the
+*Pentek SPP-Informer*), and Goulds / CentriPro (Xylem) "PumpSaver by SymCom" part numbers such as
+233153RL and 231Insider.
 **Status:** wire format **verified** (three independently-derived decoders; ~8.4 M words across
 ~57 h of captures decode with only two glitched bursts rejected, counter arithmetic proven
 against external ground truth);
@@ -152,8 +155,40 @@ faults occurred (sole exception: one single-scan transient `824→0→824` on 0x
 |---|---|---|
 | 0x19–0x1D | `0x4111, 0x1111 ×4` | 20 packed 4-bit fault-code slots (nineteen code-1, one code-4) |
 | 0x1E | `774` | Unmapped; PF-like magnitude, sits between the fault codes and the triplets |
-| 0x1F–0x56 | ~19 triplets: (2394–2432, 541–660, 755–838) | Per-fault snapshot: (V×10, A×100?, PF×1000?) — below-normal current fits dry-well/underload trips |
+| 0x1F–0x56 | ~19 triplets: (2394–2432, 541–660, 755–838) | Per-fault snapshot: (V×10, A×100?, then PF×1000? *or* W — 755–838 matches this pump's running wattage, which would line up with the Informer's documented kW/V/A fault screen). Below-normal current fits dry-well/underload trips |
 | 0x57–0x75 | bytes `00 7F 3C 00 (1A 2F 00)×14 (1A 2E 00)×~5 7E 3C` | Per-fault run-clock timestamps? Unmapped |
+
+### Informer screen mapping
+
+The Informer handheld's operating instructions document, screen by screen, everything the
+device transmits — making them the ground-truth catalog for this register map. Status of each
+documented screen:
+
+**Legend:** ✅ verified 🟡 candidate ❓ unmapped
+
+| # | Informer screen *(manual example)* | Register → meaning | Status |
+|---|---|---|---|
+| 1 | Model *(`SymCom, Inc. / Model: 233-P`)* | 0x0C = 10277 is the model-ID candidate | ❓ |
+| 2 | Live summary *(`Line: 2.30 kW / 230 VAC 12.0 A`)* | 0x10 → W, 0x11 → V×10, 0x12 → A×100 | ✅ |
+| 3 | Low-power trip *(`Line Pwr: 3.00 / Trip Pt: (2.40)`)* | live side = 0x10; trip point: 0x01 = 953 → 0.953 kW? (dry-well trip is 70–90 % of cal power) | 🟡 |
+| 4 | Overload trip *(`Line Amps: 12.0 / Trip Pt: (15.0)`)* | live side = 0x12; trip point: 0x03 = 0x08 = 1223 → 12.23 A? (spec: 125 % of cal current ⇒ cal ≈ 9.8 A) | 🟡 |
+| 5 | Calibration voltage *(`Line Volts: 230 / Cal. Volts: (230)`)* | 0x02 = 2384 or 0x0E = 2315 (two voltage-shaped constants compete) | 🟡 |
+| 6 | Restart delay *(`Rst Dly Set: 30m / Rst Dly: 12m 18s`)* | setting: 0x09 = 50?; remaining: 0x3F? (sole register that blipped `824→0→824` at a pump start; no fault observed to watch it count down) | ❓ |
+| 7 | CT size + pump starts *(`CT Size: n/a / PumpStarts: 213`)* | starts: **0x0F** ✅; CT size always "n/a" on a 233-P — plausibly one of the zero registers | ✅ / ❓ |
+| 8 | Total run time *(`27d 16h 33m`)* | **0x17** → minutes (display formats d/h/m) | ✅ |
+| 9 | Fault history ×20 *(name / `kW V A` at fault / `Time: 32d 4h 57m`)* | codes: 0x19–0x1D (20 packed nibbles); snapshots: 0x1F–0x56 triplets; timestamps: 0x57–0x75 byte table | 🟡 |
+| 10 | Max/min since calibration *(`Max. Amps: 17.0 / Min. Amps: 9.0`, `Max. Volts: 240 / Min. Volts: 215`)* | volts: 0x0A = 2488 / 0x05 = 2112?; amps: 0x0B = 1027 / 0x01 = 953? — these compete with the trip-point readings of the same constants | 🟡 |
+
+Registers with **no** Informer screen at all — 0x13 (PF×1000), 0x14 = 41, 0x07 = 45060
+(= 751 h × 60 exactly), and the zero block — may be vestigial: the pre-Plus 1998 protocol
+carried "5 signal parameters" and a motor-efficiency figure for older Informer 1.xx units.
+
+**What would settle the 🟡 rows** (cheapest first): a *recalibration* (the manual says it resets
+min/max and fault snapshots — whatever changes is min/max, whatever doesn't is a setting); a
+*knob turn* (restart delay / sensitivity → pins 0x09 and the low-power trip); a *fault event*
+(shifts the ring and exercises restart-delay-remaining); or best of all an *Informer readout*
+transcribed next to a capture — see the
+[register-identification issue form](https://github.com/lizbit-official/pumpsaver-ir-protocol/issues/new?template=02-register-identification.yml).
 
 ## 6. Reference decoding algorithm
 
