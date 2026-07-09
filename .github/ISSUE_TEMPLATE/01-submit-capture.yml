@@ -1,0 +1,47 @@
+name: Submit a capture
+description: Contribute a raw IR capture — other models, fault events, and knob-change captures are the most valuable thing you can give this project.
+title: "[capture] "
+labels: ["capture"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you! Captures are how the remaining registers get mapped. Especially valuable:
+        - **Any model other than the 233-P** (231-P, 233-1.5-P, 234-P, 235P, 236-P, 111P…)
+        - A capture **spanning a fault/trip event** (dry-well, overload, voltage fault)
+        - A **before/after capture around a settings change** (turning the SENSITIVITY or RESTART DELAY knob, or a recalibration)
+
+        How to capture: see the "Capturing raw data" section of the
+        [esphome-pumpsaver README](https://github.com/lizbit-official/esphome-pumpsaver#capturing-raw-data-for-protocol-work).
+        A minute of NDJSON is plenty for steady state; for events, include a few minutes around the event.
+  - type: input
+    id: model
+    attributes:
+      label: Device model
+      placeholder: e.g. PumpSaver Plus 234-P
+    validations:
+      required: true
+  - type: input
+    id: load
+    attributes:
+      label: What it protects
+      placeholder: e.g. 1 HP 230 V submersible well pump
+  - type: textarea
+    id: context
+    attributes:
+      label: What happened during the capture
+      description: Pump runs? A fault? A knob change (which knob, from what to what)? Timestamps help enormously.
+    validations:
+      required: true
+  - type: textarea
+    id: known-values
+    attributes:
+      label: Known true values (if any)
+      description: Anything you can read off a meter, an Informer, or the installation — line voltage, pump current, trip settings, counter values. These become ground truth.
+  - type: textarea
+    id: capture
+    attributes:
+      label: Capture file
+      description: Zip and attach the capture (GitHub rejects bare .ndjson attachments; .zip or renaming to .txt works), or link to it. Output of `python3 -m pumpsaver_ir stats <file>` is a nice bonus.
+    validations:
+      required: true

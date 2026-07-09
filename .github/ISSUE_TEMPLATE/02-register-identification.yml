@@ -1,0 +1,38 @@
+name: Register identification
+description: Report evidence that pins down the meaning, unit, or scale of a register (Informer readout, meter reading, settings change…).
+title: "[register] "
+labels: ["register-map"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The register map ([PROTOCOL.md §5](https://github.com/lizbit-official/pumpsaver-ir-protocol/blob/main/PROTOCOL.md#5-register-map))
+        still has `candidate` and `unknown` entries. Evidence that upgrades one to `verified` is gold —
+        an **Informer readout** next to a decode, a **clamp-meter/voltmeter reading**, or a register that
+        changed when you changed a setting.
+  - type: input
+    id: register
+    attributes:
+      label: Register(s)
+      placeholder: "e.g. 0x09, or the 0x1F-0x56 ring"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: What you observed, side by side — e.g. "Informer shows Rst Dly Set 30m; register 0x09 reads 50" or "clamp meter read 4.4 A while 0x12 showed 875".
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Device model
+      placeholder: e.g. 233-P
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed interpretation
+      placeholder: "0x09 = restart delay in ... units, scale ..."

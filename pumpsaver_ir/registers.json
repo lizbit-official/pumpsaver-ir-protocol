@@ -1,0 +1,40 @@
+{
+  "$comment": "Register semantics for the PumpSaver Plus 233-P IR broadcast. confidence: verified = cross-checked against external ground truth; candidate = consistent hypothesis, unconfirmed; unknown = observed value only. Values in 'observed' are from a 233-P on a ~240V well pump, Nov-Dec 2025.",
+  "protocol": {
+    "baud": 5000,
+    "bit_us_nominal": 200,
+    "bit_us_fitted": 202.0,
+    "word": "0x90 | reg:8 | value:16 BE, MSB-first, trailing zero-bits omitted",
+    "sync_word": "0x90FFAAAA",
+    "registers_total": 117,
+    "live_block": "0x01-0x18, rebroadcast every ~1.45 s",
+    "ring_block": "0x19-0x75, round-robined in 4 chunks, full refresh every ~5.8 s"
+  },
+  "registers": [
+    { "reg": "0x0F", "name": "pump_starts", "unit": "starts", "scale": 1, "confidence": "verified", "notes": "Lifetime pump-start counter (user-clearable). +1 within ~2 s of every ground-truth pump start (8/8 matched)." },
+    { "reg": "0x10", "name": "power", "unit": "W", "scale": 1, "confidence": "verified", "notes": "Active power. ~26 W idle (device self-draw), ~820 W reported while running (see factor-2 note in PROTOCOL.md), inrush peaks ~1700." },
+    { "reg": "0x11", "name": "voltage", "unit": "V", "scale": 10, "confidence": "verified", "notes": "Live line voltage x10. Tracks sags from any load on the leg, not just the pump." },
+    { "reg": "0x12", "name": "current", "unit": "A", "scale": 100, "confidence": "verified", "notes": "Live current x100. ~0.14 A idle, ~8.7 A reported while running (may double-count both hot legs; see PROTOCOL.md)." },
+    { "reg": "0x13", "name": "power_factor", "unit": "", "scale": 1000, "confidence": "candidate", "notes": "~0.78 idle and running. P = V*I*PF holds exactly at idle; reads x0.5 while running (open question)." },
+    { "reg": "0x17", "name": "run_minutes", "unit": "min", "scale": 1, "confidence": "verified", "notes": "Cumulative run-time in minutes (user-clearable). Ticks +1 per 60 s of pump running; tick carry-chains were the arithmetic proof of the encoding." },
+    { "reg": "0x01", "name": "const_0x01", "unit": "", "scale": 1, "confidence": "unknown", "notes": "Observed constant 953." },
+    { "reg": "0x02", "name": "calibration_voltage", "unit": "V", "scale": 10, "confidence": "candidate", "notes": "Observed constant 2384 (238.4 V). Calibration/nominal voltage candidate." },
+    { "reg": "0x03", "name": "overload_trip", "unit": "A", "scale": 100, "confidence": "candidate", "notes": "Observed constant 1223 (12.23 A?), equal to 0x08. Overload trip = 125% of cal current per manual." },
+    { "reg": "0x05", "name": "low_voltage_trip", "unit": "V", "scale": 10, "confidence": "candidate", "notes": "Observed constant 2112 (211.2 V). Low-voltage trip or min-volts-since-cal." },
+    { "reg": "0x07", "name": "runtime_snapshot", "unit": "min", "scale": 1, "confidence": "candidate", "notes": "Observed constant 45060 = exactly 751 h x 60. Possibly runtime at last service/reset." },
+    { "reg": "0x08", "name": "const_0x08", "unit": "", "scale": 1, "confidence": "unknown", "notes": "Observed constant 1223 (= 0x03)." },
+    { "reg": "0x09", "name": "const_0x09", "unit": "", "scale": 1, "confidence": "unknown", "notes": "Observed constant 50. Restart delay or trip delay candidate." },
+    { "reg": "0x0A", "name": "high_voltage_trip", "unit": "V", "scale": 10, "confidence": "candidate", "notes": "Observed constant 2488 (248.8 V). High-voltage trip or max-volts-since-cal." },
+    { "reg": "0x0B", "name": "const_0x0B", "unit": "", "scale": 1, "confidence": "unknown", "notes": "Observed constant 1027." },
+    { "reg": "0x0C", "name": "const_0x0C", "unit": "", "scale": 1, "confidence": "unknown", "notes": "Observed constant 10277 (0x2825). Model-ID candidate." },
+    { "reg": "0x0E", "name": "const_0x0E", "unit": "V", "scale": 10, "confidence": "candidate", "notes": "Observed constant 2315 (231.5 V). Stored/min-voltage candidate." },
+    { "reg": "0x14", "name": "const_0x14", "unit": "", "scale": 1, "confidence": "unknown", "notes": "Observed constant 41." }
+  ],
+  "blocks": [
+    { "range": "0x04,0x06,0x0D,0x15,0x16,0x18", "confidence": "unknown", "notes": "Observed constant 0." },
+    { "range": "0x19-0x1D", "confidence": "candidate", "notes": "20 packed 4-bit fault-code slots (last-20-faults feature). Observed: nineteen code-1, one code-4." },
+    { "range": "0x1E", "confidence": "unknown", "notes": "Observed constant 774. PF-like magnitude; sits between the fault-code slots and the snapshot triplets." },
+    { "range": "0x1F-0x56", "confidence": "candidate", "notes": "~19 per-fault snapshot triplets (voltage x10, current-like 5.41-6.60, PF-like 0.755-0.838). Below-normal current is consistent with dry-well/underload trips." },
+    { "range": "0x57-0x75", "confidence": "unknown", "notes": "Byte table: 00 7F 3C 00 (1A 2F 00)x14 (1A 2E 00)x~5 7E 3C. Possibly per-fault run-clock timestamps." }
+  ]
+}

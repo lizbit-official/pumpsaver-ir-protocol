@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: ESPHome / Home Assistant integration issues
+    url: https://github.com/lizbit-official/esphome-pumpsaver/issues
+    about: Problems with the ESPHome component (sensors, config, hardware) go here.
