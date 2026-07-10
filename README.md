@@ -10,7 +10,7 @@ These relays constantly broadcast their internal state over a baseband IR link
 meant for SymCom's discontinued "Informer" handheld:
 
 - live **voltage, current, power, power factor**
-- lifetime **pump-start** and **run-time** counters
+- device cumulative **pump-start** and **run-time** counters
 - trip-point configuration and the last-20-faults history
 
 This repo documents that protocol, apparently for the first time anywhere, and
@@ -58,21 +58,59 @@ reg 0x17 ( 23)  =  57671  0xE147  n=11     57671 min (run_minutes)
 ```
 
 Other commands: `events` (register changes over time), `csv` (time series),
-`stats` (decode quality). No dependencies beyond Python 3.10+.
+`stats` (decode quality). CSV rows are grouped under the timestamp of the
+capture record that supplied their updates (with the final record flushed at
+EOF); records remain distinct even when timestamps are equal or absent. No
+dependencies beyond Python 3.10+.
+
+Capture timings are normally microseconds. One early receiver pipeline stored
+duration values ten times too large; the CLI checks both that legacy model and
+normal µs against valid protocol frames across the complete input file by
+default. The option is a
+raw-to-microsecond multiplier, so units can also be stated explicitly:
+
+```console
+$ python3 -m pumpsaver_ir stats early-capture.ndjson --timing-scale 0.1
+```
+
+Advanced timing overrides are available as `--bit-us`, `--edge-skew-us`, and
+`--separator-us`; run `python3 -m pumpsaver_ir --help` for details.
+To avoid silently rescaling noise, automatic legacy detection requires at
+least two valid data words (or an exact sync word); use an explicit multiplier
+for a known one-word legacy sample.
 
 ### Library use
 
 ```python
 from pumpsaver_ir import decode_capture, registers_from_words, Word
 
-words = [w for w in decode_capture(timings) if isinstance(w, Word)]
+words = [w for w in decode_capture(timings, timing_scale="auto")
+         if isinstance(w, Word)]
 regs = registers_from_words(words)
-print(f"{regs[0x11] / 10} V, {regs[0x10]} W, {regs[0x0F]} lifetime starts")
+print(f"{regs[0x11] / 10} V, {regs[0x10]} W, {regs[0x0F]} starts")
 ```
 
-`timings` is a list of signed pulse durations in µs (positive/negative are the
-two IR levels), e.g. an ESPHome `remote_receiver` raw dump. Polarity is
-auto-detected.
+`timings` is a list of signed pulse durations (positive/negative are the two IR
+levels), e.g. an ESPHome `remote_receiver` raw dump. Polarity and whether the
+durations are normal µs or the observed tenfold legacy values are auto-detected
+from separators, the required active first pulse in a separator-free record,
+and valid frames. Set `timing_scale=1` or `timing_scale=0.1` to make units
+explicit. A single legacy word still needs an explicit scale because it cannot
+meet the intentional two-word non-native confidence guard.
+
+Normal decoding is intentionally strict: it accepts data registers 0x01-0x75
+and only the exact `0x90FFAAAA` sync word, and rejects broken pulse-sign
+alternation. For exploratory captures from other models, pass `strict=False`
+or use the CLI's `--relaxed` flag. Relaxed mode still verifies timing, pulse
+order, and the `0x90` header. Automatic scale detection always uses strict
+frames as evidence; if a capture contains only an unknown register range,
+combine relaxed mode with an explicit timing scale:
+
+```python
+unknown_words = list(decode_capture(
+    timings, timing_scale=0.1, strict=False
+))
+```
 
 ## Capturing your own data
 
@@ -101,6 +139,12 @@ configuration registers and the fault-code names are candidates awaiting
 confirmation. The
 [Informer screen mapping](PROTOCOL.md#informer-screen-mapping) shows exactly
 which screens remain unconfirmed.
+
+Counter caveat: 0x0F and 0x17 have verified increment semantics, but the
+broadcast exposes 16-bit words and the corpus did not include a manual clear
+or rollover. They should therefore be described as user-clearable device
+counters, not irreversible lifetime totals. Registers 0x16 and 0x18 stayed
+zero; treating either as an upper word would require a carry observation.
 
 The most useful contributions:
 

@@ -58,9 +58,15 @@ n_bits(active pulse) = round((width_us - 101) / 202)
 separators (>8 ms) always sit at the idle level, so whichever sign the separators carry is the
 idle/logical-0 level.
 
-**Units guard:** some capture setups report timings in 10 µs ticks rather than µs (observed with
-an early receiver configuration). Normalize by the inter-word separator magnitude (true
-separators are 11–16 ms) before decoding.
+**Units guard:** one early receiver pipeline stored every duration ten times too large (for
+example, a physical ~12 ms separator appears near 120,000 in that format). Normalize those
+captures by dividing the stored values by 10. The reference decoder defines `timing_scale` as
+the number of microseconds per stored unit: its default `timing_scale="auto"` tries `1` (normal
+µs) and `0.1` (the observed tenfold legacy representation) and selects one only from
+successfully validated protocol frames. `timing_scale=1` or `0.1` (CLI: `--timing-scale`) makes
+the choice explicit. Non-native auto-detection requires at least two valid data words or an exact
+sync word, so one noise-like burst cannot silently rescale a capture. Do not infer units from the
+single largest gap alone.
 
 **Implementation color (from a family teardown):** the transmitter is a Microchip **PIC16F684**
 (8-bit, 2 K instructions, 256 B EEPROM, no hardware UART) behind an LM258/LM339 analog front
@@ -92,6 +98,10 @@ slot:
 - No checksum exists. Integrity comes from: the constant `0x90` header, the fixed slot timing,
   strictly ascending register order within a scan, and continuous re-broadcast (~every 1.5 s for
   live registers). A decoder wanting validation should compare consecutive readings.
+- The reference decoder's normal validation also requires alternating pulse signs, register
+  0x01–0x75, and the exact `0x90FFAAAA` sync word. Its explicit relaxed/research mode preserves
+  header-valid unknown register addresses for captures from potentially different models; this
+  should not be treated as the same integrity guarantee.
 
 **Worked example** (captured during a pump run):
 
@@ -132,12 +142,21 @@ on/off events) or arithmetic structure; **candidate** = consistent hypothesis, u
 
 | Reg | Name | Scale | Confidence | Notes |
 |---|---|---|---|---|
-| 0x0F | Pump-start counter | ×1 | **verified** | +1 within ~2 s of every independently-logged pump start (8/8). User-clearable per manual |
+| 0x0F | Pump-start counter | ×1 | **verified** | The transmitted 16-bit word increased by 1 within ~2 s of every independently logged pump start (8/8). User-clearable per manual; counter width beyond this word is unresolved because no clear or rollover was captured |
 | 0x10 | Active power (W) | ×1 | **verified** | **True watts** — no correction needed: ~26 W idle (device self-draw), ~820 W running, inrush peaks ~1,700. P = V·I·PF holds at idle *and* running once 0x12's leg-sum is accounted for |
 | 0x11 | Line voltage | ×10 | **verified** | Tracks sags from any load on the supply leg |
 | 0x12 | Current (A) | ×100 idle, ×200 running | **verified** | **Leg-sum channel**: under pump load both 240 V hot legs pass the sensing path, so the value reads ~2× true motor current (~870 → 4.35 A true); the device's own idle draw is single-count (~14 → 0.14 A). Established by the power identity holding exactly at both operating points; the fault log stores single-count amps |
 | 0x13 | Power factor | ×1000 | candidate | ~0.78, barely moves idle↔run; consistent with P/(V·I) at both operating points; heavily averaged (unchanged even at inrush samples) |
-| 0x17 | Run-time (minutes) | ×1 | **verified** | +1 per 60 s of running; its tick carry-chains match binary increment exactly (the arithmetic proof of this spec). User-clearable |
+| 0x17 | Run-time (minutes) | ×1 | **verified** | The transmitted 16-bit word increased by 1 per 60 s of running; its tick carry-chains match binary increment exactly. User-clearable; counter width beyond this word is unresolved because no clear or rollover was captured |
+
+Both counter meanings and their low-word arithmetic are verified, but calling
+them irreversible “lifetime” totals would overstate the evidence. Each appears
+on the wire as one 16-bit value, and the corpus contains neither a manual clear
+nor a `0xFFFF → 0` transition. Registers 0x16 and 0x18 remained zero and are
+plausible places for additional run-time bits, but assigning either one as an
+upper word without a carry observation would be speculation. Consumers should
+preserve historical totals and treat a decrease as an unresolved clear-or-wrap
+event until a transition capture settles the encoding.
 
 ### Configuration / stored values (0x01–0x18 remainder)
 
@@ -155,7 +174,7 @@ on/off events) or arithmetic structure; **candidate** = consistent hypothesis, u
 | 0x0C | 10277 | unknown | = 0x2825. Model-ID reading weakened: the family convention is a *literal decimal* model code (777-P2 stores 778, 77C stores 77) and no register holds 233. The family also used month+serial / year registers — 0x0C/0x07 may be a serial/date pair |
 | 0x0E | 2315 | candidate | Min-volts-since-cal or nominal voltage, 231.5 V (refuted as a max-V record) |
 | 0x14 | 41 | candidate | 4.1 s ≈ the manual's fixed 4 s dry-well trip delay (×10) |
-| 0x04, 0x06, 0x0D, 0x15, 0x16, 0x18 | 0 | unknown | Restart-delay setting/remaining and CT size are expected to live among these (all are 0 / n-a except during a lockout or on CT-equipped models) |
+| 0x04, 0x06, 0x0D, 0x15, 0x16, 0x18 | 0 | unknown | Restart-delay setting/remaining and CT size are expected to live among these (all are 0 / n-a except during a lockout or on CT-equipped models). 0x16/0x18 are also unproven upper-word candidates for 0x17; neither changed in the corpus |
 
 ### Fault-history ring (0x19–0x75) — decoded
 
@@ -226,19 +245,25 @@ transcribed next to a capture — see the
 
 ```
 for each capture:
-    idle_sign = sign of pulses wider than 8 ms
+    idle_sign = sign of pulses wider than 8 ms,
+                or opposite the active first pulse for a separator-free record
     for each burst (pulses between >8 ms gaps):
+        require first pulse is active and pulse signs alternate
         bits = ""
         for each pulse:
             n = round((|width| ± 101) / 202)      # + for idle-level, − for active-level
             bits += ("0" if idle-level else "1") × n
         word = int(bits padded with "0" to 32)
         require word >> 24 == 0x90
-        emit (reg = (word >> 16) & 0xFF, value = word & 0xFFFF)
+        reg = (word >> 16) & 0xFF; value = word & 0xFFFF
+        require reg in 0x01..0x75, or (reg, value) == (0xFF, 0xAAAA)
+        emit (reg, value)
 ```
 
-The reference implementation is [`pumpsaver_ir/decoder.py`](pumpsaver_ir/decoder.py) (~100 lines,
-stdlib only). An ESP32/ESPHome implementation lives in the companion repo [esphome-pumpsaver](https://github.com/lizbit-official/esphome-pumpsaver).
+The dependency-free reference implementation is
+[`pumpsaver_ir/decoder.py`](pumpsaver_ir/decoder.py). An ESP32/ESPHome
+implementation lives in the companion repo
+[esphome-pumpsaver](https://github.com/lizbit-official/esphome-pumpsaver).
 
 ## 7. Open questions
 
@@ -250,9 +275,13 @@ stdlib only). An ESP32/ESPHome implementation lives in the companion repo [espho
    settles it in one shot.
 3. **Unlocated registers**: restart-delay setting & remaining, CT size, max/min amps since cal,
    model ID (0x0C?), the roles of 0x07/0x0B/0x0E, the 0x03/0x08 duplication, the 0x75 trailer.
-4. *(Resolved in v0.2: the former "factor-2 in running power" question — 0x10 is true watts; the
+4. **Counter width and rollover** — the 16-bit words at 0x0F and 0x17 have verified
+   increment semantics, but no wrap or user-clear event was captured. A capture spanning
+   `0x17: 0xFFFF → 0` (while watching 0x16 and 0x18) would distinguish a standalone
+   16-bit counter from a wider encoding.
+5. *(Resolved in v0.2: the former "factor-2 in running power" question — 0x10 is true watts; the
    current channel leg-sums both hots under load. See §5.)*
-5. Whether other SymCom models (231-P, 234-P, 235P, 236-P, larger 777/SubMonitor family) share
+6. Whether other SymCom models (231-P, 234-P, 235P, 236-P, larger 777/SubMonitor family) share
    this framing. The Informer's backward compatibility with pre-Plus models implies typed records
    were designed for extensibility.
 

@@ -13,8 +13,17 @@ import argparse
 import json
 import sys
 from importlib import resources
+from typing import Iterable, Iterator
 
-from .decoder import DecodeError, Word, decode_capture, iter_ndjson
+from .decoder import (
+    BIT_US,
+    SEPARATOR_US,
+    DecodeError,
+    Word,
+    decode_capture,
+    detect_timing_scale_records,
+    iter_ndjson,
+)
 
 
 def _load_semantics() -> dict[int, dict]:
@@ -32,27 +41,49 @@ def _fmt(reg: int, value: int, sem: dict[int, dict]) -> str:
     return str(value)
 
 
-def _words(path: str):
-    """Yield (ts, Word) over a capture file, collecting error counts."""
+def _words(path: str, **decode_options):
+    """Yield ``(record_index, ts, Word)`` and collect decode statistics.
+
+    Automatic timing-scale evidence is scored over the whole file in a
+    streaming pre-pass. The decode pass then uses that fixed scale, so a
+    malformed record is counted as an error instead of restarting detection
+    or aborting the remaining file.
+    """
     stats = {"words": 0, "errors": 0, "sync": 0}
-    for ts, data in iter_ndjson(path):
-        for item in decode_capture(data):
-            if isinstance(item, DecodeError):
-                stats["errors"] += 1
-                continue
-            stats["words"] += 1
-            if item.is_sync:
-                stats["sync"] += 1
-                continue
-            yield ts, item
+    options = dict(decode_options)
+    if options.get("timing_scale", "auto") == "auto":
+        options["timing_scale"] = detect_timing_scale_records(
+            (data for _, data in iter_ndjson(path)),
+            bit_us=options.get("bit_us", BIT_US),
+            edge_skew_us=options.get("edge_skew_us"),
+            separator_us=options.get("separator_us", SEPARATOR_US),
+        )
+
+    for record_index, (ts, data) in enumerate(iter_ndjson(path)):
+        try:
+            items = decode_capture(data, **options)
+            for item in items:
+                if isinstance(item, DecodeError):
+                    stats["errors"] += 1
+                    continue
+                stats["words"] += 1
+                if item.is_sync:
+                    stats["sync"] += 1
+                    continue
+                yield record_index, ts, item
+        except DecodeError:
+            # Record-level failures (for example empty data or unusable
+            # polarity) do not have a burst object to yield. Count one error
+            # and continue now that the file-wide scale is established.
+            stats["errors"] += 1
     _words.stats = stats  # type: ignore[attr-defined]
 
 
-def cmd_table(path: str) -> None:
+def cmd_table(path: str, **decode_options) -> None:
     sem = _load_semantics()
     latest: dict[int, int] = {}
     counts: dict[int, int] = {}
-    for _, w in _words(path):
+    for _, _, w in _words(path, **decode_options):
         latest[w.reg] = w.value
         counts[w.reg] = counts.get(w.reg, 0) + 1
     for reg in sorted(latest):
@@ -63,10 +94,10 @@ def cmd_table(path: str) -> None:
           file=sys.stderr)
 
 
-def cmd_events(path: str) -> None:
+def cmd_events(path: str, **decode_options) -> None:
     sem = _load_semantics()
     last: dict[int, int] = {}
-    for ts, w in _words(path):
+    for _, ts, w in _words(path, **decode_options):
         if last.get(w.reg) != w.value:
             old = last.get(w.reg)
             change = f"{old} -> {w.value}" if old is not None else f"= {w.value}"
@@ -74,23 +105,49 @@ def cmd_events(path: str) -> None:
             last[w.reg] = w.value
 
 
-def cmd_csv(path: str, regs: list[int]) -> None:
-    print("ts," + ",".join(f"reg_0x{r:02X}" for r in regs))
+def _group_csv_rows(words: Iterable[tuple[int, float | None, Word]],
+                    regs: list[int]) -> Iterator[tuple[float | None, tuple[int, ...]]]:
+    """Group word updates by their source-record identity.
+
+    Timestamps are output labels, not record identifiers: distinct NDJSON
+    records can legitimately have the same timestamp or no timestamp. Values
+    carry forward, but a row is emitted only for a source record that updated
+    at least one requested register. The final record is flushed at EOF.
+    """
     current: dict[int, int] = {}
-    pending = False
-    last_ts = None
-    for ts, w in _words(path):
-        if w.reg in regs:
-            current[w.reg] = w.value
-            pending = True
-        if ts != last_ts and pending and len(current) == len(regs):
-            print(f"{ts}," + ",".join(str(current[r]) for r in regs))
-            pending = False
-        last_ts = ts
+    group_record = 0
+    group_ts: float | None = None
+    has_group = False
+    group_changed = False
+
+    for record_index, ts, word in words:
+        if not has_group:
+            group_record = record_index
+            group_ts = ts
+            has_group = True
+        elif record_index != group_record:
+            if group_changed and all(reg in current for reg in regs):
+                yield group_ts, tuple(current[reg] for reg in regs)
+            group_record = record_index
+            group_ts = ts
+            group_changed = False
+
+        if word.reg in regs:
+            current[word.reg] = word.value
+            group_changed = True
+
+    if has_group and group_changed and all(reg in current for reg in regs):
+        yield group_ts, tuple(current[reg] for reg in regs)
 
 
-def cmd_stats(path: str) -> None:
-    for _ in _words(path):
+def cmd_csv(path: str, regs: list[int], **decode_options) -> None:
+    print("ts," + ",".join(f"reg_0x{r:02X}" for r in regs))
+    for ts, values in _group_csv_rows(_words(path, **decode_options), regs):
+        print(f"{ts}," + ",".join(str(value) for value in values))
+
+
+def cmd_stats(path: str, **decode_options) -> None:
+    for _ in _words(path, **decode_options):
         pass
     s = _words.stats  # type: ignore[attr-defined]
     total = s["words"] + s["errors"]
@@ -105,15 +162,53 @@ def main() -> None:
     p.add_argument("capture", help="NDJSON capture file")
     p.add_argument("regs", nargs="?", default="0x10,0x11,0x12,0x13",
                    help="csv mode: comma-separated register list (default live telemetry)")
+    p.add_argument(
+        "--timing-scale",
+        default="auto",
+        metavar="auto|N",
+        help=(
+            "microseconds per raw unit (default: auto; use 0.1 for observed "
+            "legacy values stored 10x too large)"
+        ),
+    )
+    p.add_argument("--bit-us", type=float, default=BIT_US,
+                   help="transmitter bit period in microseconds (default: 202)")
+    p.add_argument("--edge-skew-us", type=float,
+                   help="receiver edge skew in microseconds (default: half the bit period)")
+    p.add_argument("--separator-us", type=float, default=SEPARATOR_US,
+                   help="minimum inter-word gap in microseconds (default: 8000)")
+    p.add_argument(
+        "--relaxed",
+        action="store_true",
+        help="accept header-valid registers outside 0x01-0x75 (research/other models)",
+    )
     args = p.parse_args()
-    if args.command == "table":
-        cmd_table(args.capture)
-    elif args.command == "events":
-        cmd_events(args.capture)
-    elif args.command == "csv":
-        cmd_csv(args.capture, [int(r, 16) for r in args.regs.split(",")])
-    elif args.command == "stats":
-        cmd_stats(args.capture)
+    try:
+        timing_scale: str | float
+        if args.timing_scale == "auto":
+            timing_scale = "auto"
+        else:
+            timing_scale = float(args.timing_scale)
+        decode_options = {
+            "timing_scale": timing_scale,
+            "bit_us": args.bit_us,
+            "edge_skew_us": args.edge_skew_us,
+            "separator_us": args.separator_us,
+            "strict": not args.relaxed,
+        }
+        if args.command == "table":
+            cmd_table(args.capture, **decode_options)
+        elif args.command == "events":
+            cmd_events(args.capture, **decode_options)
+        elif args.command == "csv":
+            regs = [int(r, 16) for r in args.regs.split(",")]
+            if not regs:
+                raise ValueError("csv register list cannot be empty")
+            cmd_csv(args.capture, regs, **decode_options)
+        elif args.command == "stats":
+            cmd_stats(args.capture, **decode_options)
+    except (DecodeError, OSError, ValueError, json.JSONDecodeError) as exc:
+        p.error(str(exc))
 
 
 if __name__ == "__main__":

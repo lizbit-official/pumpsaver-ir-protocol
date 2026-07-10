@@ -1,0 +1,12 @@
+# Inventory of selected small artifacts in the original 2026-07 analysis workspace.
+# These paths are relative to that workspace, not this repository. The files and
+# private captures are intentionally not vendored here. See ../REPRODUCIBILITY.md.
+642a82cf90948b81da85f7b6382fba28e81be593c1aca435de82c1a3df742e23  6-9-2026-analysis.md
+33dcdccf122838354a366ee046b20bdf494d3d5f9f1538b1812bede1ca90d291  analysis-2026-07/catalog.py
+531fccb91e2323b10c7323f8c8c84d385592107214b92b9672c0845817020f48  analysis-2026-07/decode_records.py
+ead55f2375a3a7ee2faa53650c555d271fbb323e1fe0348ab6a711eece26d7a6  analysis-2026-07/extract.py
+de4832ece97db3fd403dd477b14382c591d0433689c63d4a4c85eb1d26eb9610  analysis-2026-07/irlib.py
+ed899d2b24bf9813e492bd2454b9e67ed589f2406de62efcb223a78d1e8f00a3  analysis-2026-07/records.py
+fa2996087cf0adca1b7689a6f1e25f2cec22a1fcbc3e0c967eaf99cb86275bee  analysis-2026-07/regmap.py
+80699834b8ab68d6efb9674f4c8552f7385f9bd03036fee1dd2c8cd244349a17  analysis-2026-07/rosetta_cycle.csv
+767c2b652d01ed748db02c123bd8f848c5311319e8b4191f0c71e53225a5e335  analysis-2026-07/known_plaintext_targets.csv

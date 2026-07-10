@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install package and test runner
+        run: python -m pip install -e . pytest
+      - name: Run unit tests
+        run: python -m pytest
+      - name: Verify public corpus manifest
+        run: python tools/corpus_report.py --check-manifest reproducibility/public-corpus.json
+      - name: Smoke-test both CLI entry points
+        run: |
+          python -m pumpsaver_ir stats examples/sample_capture.ndjson
+          pumpsaver-ir table examples/sample_capture.ndjson
+
+  package:
+    name: Build and install wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Build distributions
+        run: |
+          python -m pip install build
+          python -m build
+      - name: Install wheel and verify packaged data
+        run: |
+          python -m venv /tmp/pumpsaver-wheel-test
+          /tmp/pumpsaver-wheel-test/bin/python -m pip install dist/*.whl
+          cd /tmp
+          /tmp/pumpsaver-wheel-test/bin/python -c "import pumpsaver_ir; assert pumpsaver_ir.__version__ == '0.2.0'"
+          /tmp/pumpsaver-wheel-test/bin/python -c "import json; from importlib import resources; spec = json.loads(resources.files('pumpsaver_ir').joinpath('registers.json').read_text()); assert spec['protocol']['sync_word'] == '0x90FFAAAA'"
+          /tmp/pumpsaver-wheel-test/bin/pumpsaver-ir stats "$GITHUB_WORKSPACE/examples/sample_capture.ndjson"

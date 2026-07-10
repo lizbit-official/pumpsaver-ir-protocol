@@ -1,17 +1,17 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pumpsaver-ir"
-version = "0.1.0"
+version = "0.2.0"
 description = "Decoder for the SymCom/Littelfuse PumpSaver Plus IR register broadcast"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Topic :: Home Automation",
 ]
 
