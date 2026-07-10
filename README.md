@@ -9,9 +9,11 @@ Sta-Rite labels) and as **Goulds / CentriPro "PumpSaver by SymCom"** units.
 These relays constantly broadcast their internal state over a baseband IR link
 meant for SymCom's discontinued "Informer" handheld:
 
-- live **voltage, current, power, power factor**
+- live **voltage, current, power**
+- the **trip-point and restart-delay knob settings**, live, and the
+  restart-lockout countdown
 - device cumulative **pump-start** and **run-time** counters
-- trip-point configuration and the last-20-faults history
+- the last-20-faults history with per-fault conditions and timestamps
 
 This repo documents that protocol, apparently for the first time anywhere, and
 provides a tested reference decoder.
@@ -120,6 +122,20 @@ no carrier. The proven setup (bare IR phototransistor + ESP32
 `remote_receiver`) is documented in
 [esphome-pumpsaver](https://github.com/lizbit-official/esphome-pumpsaver),
 including an NDJSON capture pipeline compatible with this decoder.
+
+The IR source is the **"IR LINK" window at the top left of the relay's inner
+faceplate** (also exposed through the "POINT INFORMER HERE" window on the
+outer cover). The 233P-1.5 the protocol was reverse engineered on, with a
+phototransistor visible at the IR LINK window:
+
+<p align="center">
+  <img src="docs/faceplate-233p-1p5.jpg" width="420" alt="PumpSaver Plus 233P-1.5 inner faceplate: IR LINK window top left with a phototransistor aimed at it, RESTART DELAY/CALIBRATION and SENSITIVITY knobs, RUN and CAL lights, L1/L2 terminals">
+</p>
+
+The knobs on this faceplate broadcast live: the SENSITIVITY knob is register
+`0x13` (dry-well trip point in watts) and the RESTART DELAY knob is `0x14`
+(minutes). Watching those registers while turning the knobs is how they were
+identified.
 
 ## Repo layout
 
