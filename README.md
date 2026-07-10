@@ -2,7 +2,7 @@
 
 Protocol specification and reference decoder for the IR data broadcast of
 **SymCom / Littelfuse PumpSaver Plus** pump-protection relays, reverse
-engineered on a 233-P. The same devices ship rebranded as **Pentek / Pentair
+engineered on a 233P-1.5, the 1.5 hp variant of the 233-P. The same devices ship rebranded as **Pentek / Pentair
 SPP-series** (SPP-233P, SPP-235P, SD-F30x; also sold under Berkeley, Myers and
 Sta-Rite labels) and as **Goulds / CentriPro "PumpSaver by SymCom"** units.
 
@@ -127,7 +127,7 @@ including an NDJSON capture pipeline compatible with this decoder.
 PROTOCOL.md                  the specification (start here)
 pumpsaver_ir/decoder.py      reference decoder (stdlib only)
 pumpsaver_ir/registers.json  machine-readable register map with confidence levels
-examples/sample_capture.ndjson  30 real transmissions from a 233-P (~15 s, 2.5 broadcast cycles)
+examples/sample_capture.ndjson  30 real transmissions from a 233P-1.5 (~15 s, 2.5 broadcast cycles)
 tests/test_decoder.py        round-trip + real-capture tests
 ```
 

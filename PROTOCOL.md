@@ -1,9 +1,9 @@
 # SymCom / Littelfuse PumpSaver Plus — IR Broadcast Protocol
 
 **Spec version:** 0.2 (2026-07-09)
-**Applies to:** PumpSaver Plus 233-P (reverse engineered on this model; other Informer-compatible
-SymCom models — 231-P Insider, 233-1.5-P, 234-P, 235P, 236-P, 111P — very likely share the framing,
-possibly with different register maps). The same hardware ships **rebranded**: Pentek / Pentair
+**Applies to:** the PumpSaver Plus family; reverse engineered on a **233P-1.5** (the 1/3-1.5 hp
+variant of the 233-P). Other Informer-compatible SymCom models — 233-P, 231-P Insider, 234-P,
+235P, 236-P, 111P — very likely share the framing, possibly with different register maps. The same hardware ships **rebranded**: Pentek / Pentair
 "Submersible Pump Protector" SPP-233P, SPP-235P, SPP-111-3RLP and SD-F30x (their reader is the
 *Pentek SPP-Informer*; Berkeley, Myers and Sta-Rite sell the same SPP SKUs), and Goulds /
 CentriPro (Xylem) "PumpSaver by SymCom" part numbers (233, 2333RL, 2353RL50/75/100, 231Insider…).
@@ -14,7 +14,7 @@ against external ground truth);
 register semantics partially verified — see confidence column in the register map.
 
 This protocol appears to have no public documentation anywhere — no patent, FCC filing, or prior
-reverse engineering was found. It was recovered entirely from captures of one 233-P in service.
+reverse engineering was found. It was recovered entirely from captures of one 233P-1.5 in service.
 
 ---
 
@@ -132,7 +132,7 @@ not as packets.
 
 ## 5. Register map
 
-Semantics were established on a 233-P protecting a ~240 V single-phase well pump.
+Semantics were established on a 233P-1.5 protecting a ~240 V single-phase well pump.
 Confidence: **verified** = cross-checked against external ground truth (independently logged pump
 on/off events) or arithmetic structure; **candidate** = consistent hypothesis, unconfirmed;
 **unknown** = stable observed value, meaning unassigned. Machine-readable copy:
@@ -168,7 +168,7 @@ event until a transition capture settles the encoding.
 | 0x05 | 2112 | candidate | Low-voltage trip **or** min-volts-since-cal, 211.2 V — 24 days of captures never discriminated (live V stayed within 233.1–248.8 V) |
 | 0x07 | 45060 | unknown | = 0xB004; = 751 h × 60 exactly, or an ID/bit-field — unresolved |
 | 0x08 | 1223 | candidate | = 0x03; duplication unexplained |
-| 0x09 | 50 | candidate | 5.0 s overcurrent trip delay (×10) — but 50 is also a legal restart-delay setting (knob range 2–225 min) and a legal CT ratio (50:5); a knob photo discriminates |
+| 0x09 | 50 | **candidate (strong)** | 5.0 s overcurrent trip delay (×10). Rival readings refuted by the test unit: its restart-delay knob sits near 100–160 min while this reads 50, and the model has no CT |
 | 0x0A | 2488 | candidate | High-voltage trip **or** max-volts-since-cal, 248.8 V (live V once grazed exactly 2488 for a single sample and retreated — suggestive, not probative) |
 | 0x0B | 1027 | **candidate (strong)** | **Firmware version 4.03** — matches the SymCom family's documented packed-version convention exactly (high byte = major, low = minor; their Solutions software renders reg 1 of a 777 the same way) |
 | 0x0C | 10277 | unknown | = 0x2825. Model-ID reading weakened: the family convention is a *literal decimal* model code (777-P2 stores 778, 77C stores 77) and no register holds 233. The family also used month+serial / year registers — 0x0C/0x07 may be a serial/date pair |
@@ -224,7 +224,7 @@ documented screen:
 | 4 | Overload trip *(`Line Amps: 12.0 / Trip Pt: (15.0)`)* | live side = 0x12; trip point: 0x03 = 0x08 = 1223 → 12.23 A? (spec: 125 % of cal current ⇒ cal ≈ 9.8 A) | 🟡 |
 | 5 | Calibration voltage *(`Line Volts: 230 / Cal. Volts: (230)`)* | 0x02 = 2384 or 0x0E = 2315 (two voltage-shaped constants compete) | 🟡 |
 | 6 | Restart delay *(`Rst Dly Set: 30m / Rst Dly: 12m 18s`)* | Both unmapped — no lockout ever occurred in the corpus. Field video shows the remaining-time updating with ~1 s resolution during lockout, so it likely lives among the always-0 live registers (0x04/0x06/0x0D/0x15/0x16/0x18) | ❓ |
-| 7 | CT size + pump starts *(`CT Size: n/a / PumpStarts: 213`)* | starts: **0x0F** ✅; CT size always "n/a" on a 233-P — plausibly one of the zero registers | ✅ / ❓ |
+| 7 | CT size + pump starts *(`CT Size: n/a / PumpStarts: 213`)* | starts: **0x0F** ✅; CT size always "n/a" on non-CT models like the 233P-1.5 — plausibly one of the zero registers | ✅ / ❓ |
 | 8 | Total run time *(`27d 16h 33m`)* | **0x17** → minutes (display formats d/h/m) | ✅ |
 | 9 | Fault history ×20 *(name / `kW V A` at fault / `Time: 32d 4h 57m`)* | **Structure decoded** — codes at 0x19–0x1D, (W, V, A) snapshots on the 0x1E+3k grid, 24-bit run-clock-minute timestamps at 0x57–0x74. Code names partially known: 1 = dry-well (proven), 4 = unidentified | ✅ |
 | 10 | Max/min since calibration *(`Max. Amps: 17.0 / Min. Amps: 9.0`, `Max. Volts: 240 / Min. Volts: 215`)* | volts: 0x0A / 0x05 remain candidates (vs trip settings — 24 days never discriminated); the amps candidates were all refuted (0x01 = cal power; 0x0B unmoved by 2–3× inrush) — max/min-amps registers unlocated | 🟡 |

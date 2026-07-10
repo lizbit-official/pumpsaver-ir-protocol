@@ -1,5 +1,5 @@
 {
-  "$comment": "Register semantics for the PumpSaver Plus 233-P IR broadcast (spec v0.2). confidence: verified = cross-checked against external ground truth or arithmetic structure; candidate = consistent hypothesis (strong = rivals refuted); unknown = observed value only. Observed values are from a 233-P on a ~240V well pump, Nov-Dec 2025.",
+  "$comment": "Register semantics for the PumpSaver Plus IR broadcast (spec v0.2, reverse engineered on a 233P-1.5). confidence: verified = cross-checked against external ground truth or arithmetic structure; candidate = consistent hypothesis (strong = rivals refuted); unknown = observed value only. Observed values are from a 233P-1.5 on a ~240V well pump, Nov-Dec 2025.",
   "protocol": {
     "spec_version": "0.2",
     "baud": 5000,
@@ -25,7 +25,7 @@
     { "reg": "0x05", "name": "low_voltage_trip_or_min", "unit": "V", "scale": 10, "confidence": "candidate", "notes": "211.2 V. Low-voltage trip OR min-volts-since-cal; 24 days of data never discriminated." },
     { "reg": "0x07", "name": "const_0x07", "unit": "", "scale": 1, "confidence": "unknown", "notes": "45060 = 0xB004 = 751 h x 60 exactly, or an ID/bit-field. Unresolved." },
     { "reg": "0x08", "name": "const_0x08", "unit": "", "scale": 1, "confidence": "candidate", "notes": "= 0x03 (1223); duplication unexplained." },
-    { "reg": "0x09", "name": "oc_trip_delay", "unit": "s", "scale": 10, "confidence": "candidate", "notes": "50 = 5.0 s fixed overcurrent trip delay — but 50 is also a legal restart-delay setting (knob 2-225 min) and a legal CT ratio (50:5). A knob photo discriminates." },
+    { "reg": "0x09", "name": "oc_trip_delay", "unit": "s", "scale": 10, "confidence": "candidate-strong", "notes": "50 = 5.0 s fixed overcurrent trip delay. Rivals refuted: the test unit restart-delay knob sits near 100-160 min while this reads 50, and the model has no CT." },
     { "reg": "0x0A", "name": "high_voltage_trip_or_max", "unit": "V", "scale": 10, "confidence": "candidate", "notes": "248.8 V. High-voltage trip OR max-volts-since-cal (live V once grazed exactly 2488 for one sample)." },
     { "reg": "0x0B", "name": "firmware_version", "unit": "", "scale": 1, "confidence": "candidate-strong", "notes": "1027 = 0x0403 = firmware v4.03 — matches the SymCom family packed-version convention exactly (high byte major, low minor)." },
     { "reg": "0x0C", "name": "const_0x0C", "unit": "", "scale": 1, "confidence": "unknown", "notes": "10277 = 0x2825. Model-ID reading weakened (family convention stores literal decimal model codes; nothing holds 233). Possibly a serial/date pair with 0x07." },
