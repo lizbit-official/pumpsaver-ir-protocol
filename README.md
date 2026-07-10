@@ -50,7 +50,7 @@ reg 0x0F ( 15)  =  11179  0x2BAB  n=10     11179 starts (pump_starts)
 reg 0x10 ( 16)  =     26  0x001A  n=10     26 W (power)
 reg 0x11 ( 17)  =   2439  0x0987  n=10     243.9 V (voltage)
 reg 0x12 ( 18)  =     14  0x000E  n=10     0.14 A (current)
-reg 0x13 ( 19)  =    781  0x030D  n=10     0.781  (power_factor)
+reg 0x13 ( 19)  =    781  0x030D  n=10     781 W (drywell_trip)
 ...
 reg 0x17 ( 23)  =  57671  0xE147  n=11     57671 min (run_minutes)
 ...

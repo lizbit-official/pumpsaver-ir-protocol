@@ -1,6 +1,6 @@
 # SymCom / Littelfuse PumpSaver Plus — IR Broadcast Protocol
 
-**Spec version:** 0.2 (2026-07-09)
+**Spec version:** 0.3 (2026-07-09)
 **Applies to:** the PumpSaver Plus family; reverse engineered on a **233P-1.5** (the 1/3-1.5 hp
 variant of the 233-P). Other Informer-compatible SymCom models — 233-P, 231-P Insider, 234-P,
 235P, 236-P, 111P — very likely share the framing, possibly with different register maps. The same hardware ships **rebranded**: Pentek / Pentair
@@ -8,10 +8,11 @@ variant of the 233-P). Other Informer-compatible SymCom models — 233-P, 231-P 
 *Pentek SPP-Informer*; Berkeley, Myers and Sta-Rite sell the same SPP SKUs), and Goulds /
 CentriPro (Xylem) "PumpSaver by SymCom" part numbers (233, 2333RL, 2353RL50/75/100, 231Insider…).
 Beware suffix conventions: Pentek `-100` = 10 HP, CentriPro `RL100` = 100:5 CT.
-**Status:** wire format **verified** (three independently-derived decoders; ~8.4 M words across
-~57 h of captures decode with only two glitched bursts rejected, counter arithmetic proven
-against external ground truth);
-register semantics partially verified — see confidence column in the register map.
+**Status:** wire format **verified** (three independently-derived decoders; ~13 M words across
+8 months of captures, counter arithmetic proven against external ground truth); register
+semantics substantially verified, including by **live actuation** (2026-07-09 field session:
+knob sweeps tracked in real time, plus a deliberately induced underload trip whose full ring
+shift, condition latches, and restart countdown were observed on the wire).
 
 This protocol appears to have no public documentation anywhere — no patent, FCC filing, or prior
 reverse engineering was found. It was recovered entirely from captures of one 233P-1.5 in service.
@@ -146,8 +147,21 @@ on/off events) or arithmetic structure; **candidate** = consistent hypothesis, u
 | 0x10 | Active power (W) | ×1 | **verified** | **True watts** — no correction needed: ~26 W idle (device self-draw), ~820 W running, inrush peaks ~1,700. P = V·I·PF holds at idle *and* running once 0x12's leg-sum is accounted for |
 | 0x11 | Line voltage | ×10 | **verified** | Tracks sags from any load on the supply leg |
 | 0x12 | Current (A) | ×100 idle, ×200 running | **verified** | **Leg-sum channel**: under pump load both 240 V hot legs pass the sensing path, so the value reads ~2× true motor current (~870 → 4.35 A true); the device's own idle draw is single-count (~14 → 0.14 A). Established by the power identity holding exactly at both operating points; the fault log stores single-count amps |
-| 0x13 | Power factor | ×1000 | candidate | ~0.78, barely moves idle↔run; consistent with P/(V·I) at both operating points; heavily averaged (unchanged even at inrush samples) |
+| 0x13 | **Dry-well trip point** | W ×1 | **verified (live)** | = SENSITIVITY knob × calibration power (0x01). Tracks the knob in real time (swept 744–885 W; NORMAL = 781 = 82 % of 953 W; the + endstop measured ~885 = 93 %, past the documented 90 %). Raising it above running power trips the relay in ~4 s. Pot dither ±5 W. *Formerly misread as power factor ×1000 — 781 was numerology* |
 | 0x17 | Run-time (minutes) | ×1 | **verified** | The transmitted 16-bit word increased by 1 per 60 s of running; its tick carry-chains match binary increment exactly. User-clearable; counter width beyond this word is unresolved because no clear or rollover was captured |
+
+### Settings, lockout state, and fault latches (live-verified 2026-07-09)
+
+| Reg | Name | Scale | Confidence | Notes |
+|---|---|---|---|---|
+| 0x14 | **Restart-delay setting** | min ×1 | **verified (live)** | Tracks the RESTART DELAY knob in real time (swept 16–77 min). The dial silkscreen is poorly calibrated: dial "just above 50" read 66–77 actual minutes; dial "just under 2" read 16. Changing it mid-lockout re-bases the running countdown. *Formerly misread as a 4.1 s trip delay* |
+| 0x15/0x16 | **Restart-delay remaining** | (0x15≪16 \| 0x16) / 256 = seconds | **verified (live)** | Zero except during a trip lockout. Initialized to exactly the setting (observed 2280.00 s = 38 min), decrements 1 s/s, re-bases on a knob change, zeroes at RESET. This is the Informer's "Rst Dly: 12m 18s" source |
+| 0x04 | **Amps at newest fault** | A ×100 | **verified (live)** | Latched at trip (read 880 = 8.80 leg-sum at a normal-flow induced trip; same scale behavior as 0x12). Was 0 for the historical code-4 fault — the pump never ran |
+| 0x05 | **Volts at newest fault** | V ×10 | **verified (live)** | Latched at trip (jumped 2112 → 2422). The eight-month-constant 2112 was the historical code-4 fault's voltage — *not* a low-voltage trip setting as previously guessed |
+| 0x06 | **Watts at newest fault** | W ×1 | **verified (live)** | Latched at trip (read 836, the last power before cutoff). 0 for the historical code-4 fault |
+
+Lockout has a second signature: the live power register (0x10) reads exactly **0** while locked
+out, versus ~29 W when idle-and-armed.
 
 Both counter meanings and their low-word arithmetic are verified, but calling
 them irreversible “lifetime” totals would overstate the evidence. Each appears
@@ -162,24 +176,27 @@ event until a transition capture settles the encoding.
 
 | Reg | Observed | Confidence | Hypothesis |
 |---|---|---|---|
-| 0x01 | 953 | **candidate (strong)** | **Calibration power, W** — running load = 86 % of it, and every fault-log wattage sits inside the documented 70–90 % dry-well band. Refuted as a trip threshold (would trip perpetually) and as any amps record (2–3× inrush never moved it) |
+| 0x01 | 953 | **candidate (strong)** | **Calibration power, W** — the live-verified trip point (0x13) equals SENSITIVITY % × this value (781/953 = 82 % at NORMAL). Refuted as a trip threshold and as any amps record |
 | 0x02 | 2384 | candidate | Calibration voltage, 238.4 V (within 2 % of modal live V; refuted as a max-V record) |
 | 0x03 | 1223 | **candidate (strong)** | **Overcurrent trip** = exactly 125 % × implied cal current (leg-sum scale ⇒ ~4.9 A true cal current). Refuted as a min/max-amps record |
-| 0x05 | 2112 | candidate | Low-voltage trip **or** min-volts-since-cal, 211.2 V — 24 days of captures never discriminated (live V stayed within 233.1–248.8 V) |
-| 0x07 | 45060 | unknown | = 0xB004; = 751 h × 60 exactly, or an ID/bit-field — unresolved |
+| 0x07 | 45060 | unknown | = 0xB004 for 8 months, then the low byte dropped 4 → 1 at the induced trip, mirroring 0x75's high byte +3 at the next start — a paired bookkeeping mechanism (restart credits / rapid-cycle window?), under analysis |
 | 0x08 | 1223 | candidate | = 0x03; duplication unexplained |
-| 0x09 | 50 | **candidate (strong)** | 5.0 s overcurrent trip delay (×10). Rival readings refuted by the test unit: its restart-delay knob sits near 100–160 min while this reads 50, and the model has no CT |
+| 0x09 | 50 | **candidate (strong)** | 5.0 s overcurrent trip delay (×10). Rivals refuted: the restart-delay setting proved to live in 0x14, and the model has no CT |
 | 0x0A | 2488 | candidate | High-voltage trip **or** max-volts-since-cal, 248.8 V (live V once grazed exactly 2488 for a single sample and retreated — suggestive, not probative) |
 | 0x0B | 1027 | **candidate (strong)** | **Firmware version 4.03** — matches the SymCom family's documented packed-version convention exactly (high byte = major, low = minor; their Solutions software renders reg 1 of a 777 the same way) |
 | 0x0C | 10277 | unknown | = 0x2825. Model-ID reading weakened: the family convention is a *literal decimal* model code (777-P2 stores 778, 77C stores 77) and no register holds 233. The family also used month+serial / year registers — 0x0C/0x07 may be a serial/date pair |
 | 0x0E | 2315 | candidate | Min-volts-since-cal or nominal voltage, 231.5 V (refuted as a max-V record) |
-| 0x14 | 41 | candidate | 4.1 s ≈ the manual's fixed 4 s dry-well trip delay (×10) |
-| 0x04, 0x06, 0x0D, 0x15, 0x16, 0x18 | 0 | unknown | Restart-delay setting/remaining and CT size are expected to live among these (all are 0 / n-a except during a lockout or on CT-equipped models). 0x16/0x18 are also unproven upper-word candidates for 0x17; neither changed in the corpus |
+| 0x0D, 0x18 | 0 | unknown | CT size (n/a on non-CT models) and the max/min-amps records remain unlocated; 0x18 is also an unproven upper-word candidate for 0x17 |
 
-### Fault-history ring (0x19–0x75) — decoded
+### Fault-history ring (0x19–0x75) — decoded and observed live
 
 The Informer's documented "last 20 faults" feature. Layout (all **newest first**), established by
-full-resolution analysis of the corpus plus exclusion arithmetic:
+full-resolution corpus analysis plus exclusion arithmetic, and **confirmed by watching an induced
+trip shift the ring in real time** (2026-07-09). Architecture note: the *newest* fault's W/V/A
+conditions live in the 0x04/0x05/0x06 latches (see §5 above); the ring snapshot slots hold faults
+#2–#20, and the latch contents are pushed into slot 0 when the *next* fault occurs — observed
+directly (the induced trip pushed the code-4 fault's conditions, `0 W / 211.2 V / 0.00 A`, into
+slot 0 while today's conditions landed in the latches):
 
 | Range | Layout | Contents on the test unit |
 |---|---|---|
@@ -188,25 +205,26 @@ full-resolution analysis of the corpus plus exclusion arithmetic:
 | 0x57–0x74 | 20 × 3-byte **run-clock timestamps**: 24-bit BE, minutes, same unit as 0x17 | `[32572, 6703 ×14, 6702 ×5]` |
 | 0x75 | Trailer word `0x7E3C` | Unresolved (= the code-4 timestamp − 256 min exactly; never updated at a normal pump start) |
 
-- **Code 1 = dry-well, proven quantitatively:** the nineteen code-1s all fall at run-minutes
-  6702–6703 — an auto-retry storm whose per-retry run time brackets to [3.2, 4.6] s, matching the
-  manual's fixed 4 s dry-well delay and excluding the 5 s overcurrent delay; dry-well is also the
-  fault class with automatic restart-delay retry.
-- **Code 4 = rapid-cycle (hypothesis):** no public code table exists for this family (verified
-  negative — the name mapping lives only in Informer firmware, and the documented enums of the
-  777/601 siblings do not transfer). But the hardware distinguishes exactly four trip classes,
-  and two independent SymCom document orderings list them *dry-well, overcurrent, voltage,
-  rapid-cycle* — suggesting `0=none, 1=dry-well, 2=overcurrent, 3=voltage, 4=rapid-cycle`.
-  The code-4 event (run-clock 32,572 min = 22d 14h 52m, normal snapshot voltage) fits a
-  rapid-cycle lockout's frequency profile.
+- **Code 1 = dry-well/underload, proven twice:** quantitatively (the nineteen code-1s at
+  run-minutes 6702–6703 form an auto-retry storm whose per-retry spacing matches the fixed 4 s
+  dry-well delay) and **by live inducement** — a sensitivity-forced underload trip logged code 1
+  (`0x4111 → 0x1411`) with a timestamp equal to the run-clock at trip (62,450 min), verifying the
+  code packing, the push direction, and the timestamp encoding in one event.
+- **Code 4 = rapid-cycle (strengthened hypothesis):** no public code table exists (verified
+  negative), but the documented family ordering suggests `0=none, 1=dry-well, 2=overcurrent,
+  3=voltage, 4=rapid-cycle` — and the code-4 fault's true conditions, revealed by the latch
+  architecture, are `W=0, A=0, V=211.2` — a pump that never got running while the line sagged,
+  which is exactly what a rapid-cycle lockout during restart attempts looks like.
 - The timestamp encoding was proven by exclusion: packed d/h/m and BCD contain invalid digits,
   hour-units and little-endian readings are physically impossible, and the storm's LSB step
   (`0x1A2F`→`0x1A2E`) is exactly adjacent minutes. 24-bit minute counters are a SymCom house
   convention (documented for the 777-P2's start counters; the Informer-MS display caps at
   ≈2²⁴ minutes), and the 20-fault ring depth recurs on the MotorSaver 455.
-- The ring is **write-once**: byte-identical across 24 days of captures and 11 pump starts. Only
-  six registers ever change without a fault: 0x0F, 0x10, 0x11, 0x12, 0x13, 0x17. (An earlier
-  draft's "0x3F transient" was a sampling artifact — 0x3F is fault record #11's wattage.)
+- The ring is **write-once between faults** (byte-identical across 8 months without one). Open
+  item from the live trip: the historical snapshot A-column's scale (leg-sum vs single-count) is
+  under re-analysis now that the latch scale is known — the storm-era values (5.41–6.60 raw) may
+  not read the way spec v0.2 assumed. (An earlier draft's "0x3F transient" was a sampling
+  artifact — 0x3F is a ring wattage cell.)
 
 ### Informer screen mapping
 
@@ -220,19 +238,18 @@ documented screen:
 |---|---|---|---|
 | 1 | Model *(`SymCom, Inc. / Model: 233-P`)* | 0x0C = 10277 is the model-ID candidate | ❓ |
 | 2 | Live summary *(`Line: 2.30 kW / 230 VAC 12.0 A`)* | 0x10 → W, 0x11 → V×10, 0x12 → A×100 | ✅ |
-| 3 | Low-power trip *(`Line Pwr: 3.00 / Trip Pt: (2.40)`)* | live side = 0x10 ✅; trip-point register unmapped — 0x01 turned out to be **calibration power**, the 100 % reference the 70–90 % knob applies to | ✅ / ❓ |
+| 3 | Low-power trip *(`Line Pwr: 3.00 / Trip Pt: (2.40)`)* | live side = 0x10; trip point = **0x13** (watts), live-verified against the SENSITIVITY knob | ✅ |
 | 4 | Overload trip *(`Line Amps: 12.0 / Trip Pt: (15.0)`)* | live side = 0x12; trip point: 0x03 = 0x08 = 1223 → 12.23 A? (spec: 125 % of cal current ⇒ cal ≈ 9.8 A) | 🟡 |
 | 5 | Calibration voltage *(`Line Volts: 230 / Cal. Volts: (230)`)* | 0x02 = 2384 or 0x0E = 2315 (two voltage-shaped constants compete) | 🟡 |
-| 6 | Restart delay *(`Rst Dly Set: 30m / Rst Dly: 12m 18s`)* | Both unmapped — no lockout ever occurred in the corpus. Field video shows the remaining-time updating with ~1 s resolution during lockout, so it likely lives among the always-0 live registers (0x04/0x06/0x0D/0x15/0x16/0x18) | ❓ |
+| 6 | Restart delay *(`Rst Dly Set: 30m / Rst Dly: 12m 18s`)* | Setting = **0x14** (minutes); remaining = **{0x15,0x16}**/256 seconds, counting at 1 s/s during lockout — both live-verified through an induced trip | ✅ |
 | 7 | CT size + pump starts *(`CT Size: n/a / PumpStarts: 213`)* | starts: **0x0F** ✅; CT size always "n/a" on non-CT models like the 233P-1.5 — plausibly one of the zero registers | ✅ / ❓ |
 | 8 | Total run time *(`27d 16h 33m`)* | **0x17** → minutes (display formats d/h/m) | ✅ |
-| 9 | Fault history ×20 *(name / `kW V A` at fault / `Time: 32d 4h 57m`)* | **Structure decoded** — codes at 0x19–0x1D, (W, V, A) snapshots on the 0x1E+3k grid, 24-bit run-clock-minute timestamps at 0x57–0x74. Code names partially known: 1 = dry-well (proven), 4 = unidentified | ✅ |
+| 9 | Fault history ×20 *(name / `kW V A` at fault / `Time: 32d 4h 57m`)* | **Structure decoded and ring shift observed live** — codes at 0x19–0x1D, newest fault's conditions in the 0x04–0x06 latches, older snapshots on the 0x1E+3k grid, 24-bit run-clock-minute timestamps at 0x57–0x74. Code 1 = dry-well/underload (proven); 4 = rapid-cycle (strengthened) | ✅ |
 | 10 | Max/min since calibration *(`Max. Amps: 17.0 / Min. Amps: 9.0`, `Max. Volts: 240 / Min. Volts: 215`)* | volts: 0x0A / 0x05 remain candidates (vs trip settings — 24 days never discriminated); the amps candidates were all refuted (0x01 = cal power; 0x0B unmoved by 2–3× inrush) — max/min-amps registers unlocated | 🟡 |
 
-Registers with **no** Informer screen at all — 0x13 (PF×1000), 0x07, 0x0B, 0x0C — may be
-vestigial or internal: the pre-Plus 1998 protocol carried "5 signal parameters" and a
-motor-efficiency figure for older Informer 1.xx units, and 0x09/0x14 read as the firmware's
-fixed trip delays rather than anything displayed.
+Registers with **no** Informer screen at all — 0x07, 0x0B, 0x0C — may be vestigial or
+internal; the pre-Plus 1998 protocol carried "5 signal parameters" and a motor-efficiency
+figure for older Informer 1.xx units.
 
 **What would settle the 🟡 rows** (cheapest first): a *recalibration* (the manual says it resets
 min/max and fault snapshots — whatever changes is min/max, whatever doesn't is a setting); a
@@ -267,23 +284,26 @@ implementation lives in the companion repo
 
 ## 7. Open questions
 
-1. **Code-4 fault identity** — best hypothesis rapid-cycle (see §5); no public enumeration
-   exists, so confirmation needs a captured fault of known type or an Informer readout of this
-   unit's fault #1 name.
-2. **Trip settings vs min/max records** for the voltage pair 0x0A/0x05: 24 days of captures never
-   discriminated. A recalibration (the manual says it resets min/max) or an Informer readout
-   settles it in one shot.
-3. **Unlocated registers**: restart-delay setting & remaining, CT size, max/min amps since cal,
-   model ID (0x0C?), the roles of 0x07/0x0B/0x0E, the 0x03/0x08 duplication, the 0x75 trailer.
-4. **Counter width and rollover** — the 16-bit words at 0x0F and 0x17 have verified
-   increment semantics, but no wrap or user-clear event was captured. A capture spanning
-   `0x17: 0xFFFF → 0` (while watching 0x16 and 0x18) would distinguish a standalone
-   16-bit counter from a wider encoding.
-5. *(Resolved in v0.2: the former "factor-2 in running power" question — 0x10 is true watts; the
-   current channel leg-sums both hots under load. See §5.)*
-6. Whether other SymCom models (231-P, 234-P, 235P, 236-P, larger 777/SubMonitor family) share
-   this framing. The Informer's backward compatibility with pre-Plus models implies typed records
-   were designed for extensibility.
+1. **The 0x07/0x75 bookkeeping pair** — static for 8 months, then 0x07's low byte dropped 4 → 1
+   at the induced trip and 0x75's high byte rose +3 at the next pump start. Restart credits or a
+   rapid-cycle window mechanism? More trip/start cycles (or a firmware disassembly) would settle it.
+2. **Code-4 fault identity** — rapid-cycle, strengthened by the latch revelation (the fault's
+   conditions were W=0, A=0, V=211.2: a pump that never started). Definitive confirmation needs
+   an Informer readout or an induced rapid-cycle.
+3. **Historical ring A-column scale** — the newest-fault latch (0x04) uses the live leg-sum
+   scale, but reading the storm-era snapshot values the same way implies impossible power
+   factors. Either the old records are single-count, or the dry-well operating regime differs.
+   Needs re-derivation against the 2026-07-09 capture.
+4. **Trip setting vs max-record for 0x0A** (248.8 V), and the roles of 0x02/0x0E: a
+   recalibration (resets min/max per the manual) settles them.
+5. **Unlocated**: CT size, max/min amps since cal, model ID, the 0x03/0x08 duplication.
+6. **Counter width and rollover** — verified increments, unknown width; a capture spanning
+   `0x17: 0xFFFF → 0` (watching 0x18) would settle it.
+7. Whether other SymCom models (231-P, 234-P, 235P, 236-P, larger 777/SubMonitor family) share
+   this framing.
+8. *(Resolved in v0.2: the factor-2 power question — leg-sum current. Resolved in v0.3: 0x13 =
+   dry-well trip watts, 0x14 = restart setting, 0x15/0x16 = restart countdown, 0x04–0x06 =
+   newest-fault latches — all by live actuation.)*
 
 Contributions with captures from other models or annotated by an actual Informer readout are
 very welcome.
@@ -305,6 +325,12 @@ very welcome.
   failures); every non-live register is bit-identical across the whole span; counters strictly
   monotone. The fault-ring record grid was derived independently by two analyses that agree
   exactly, and the leg-sum current model reproduces the power identity at both operating points.
+- v0.3 (live actuation, 2026-07-09): SENSITIVITY and RESTART DELAY knob sweeps tracked in
+  registers 0x13/0x14 in real time; a deliberately induced underload trip produced, on the wire:
+  the code push (`0x4111 → 0x1411`), the one-record ring shift, the latch capture
+  (880/2422/836), a timestamp equal to the run-clock at trip, and a restart countdown that
+  initialized to exactly the knob setting and decremented at 1 s/s. Counters resumed seamlessly
+  after 7 months (11,268 → 14,188 starts at the historical daily rate before the session).
 
 ## 9. Legal
 
